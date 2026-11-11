@@ -165,4 +165,3 @@ events:
       only: [profile]
     - name: garnet-ai
       type: garnet
-      only: [profile]

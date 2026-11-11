@@ -42,22 +42,29 @@ jobs:
     timeout-minutes: 60
     strategy:
       matrix:
+        # Fork-only experiment: one suite, three sensor setups, to find why
+        # the sensor writes no profile. Restore the four suites afterwards.
         test_group:
-          - unit
-          - unit-sandbox
           - registry
-          - temporal
+        sensor_arm:
+          - control
+          - no-upload
+          - drain-wait
           # - ee # TODO: re-enable this when we have tests
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
-      # Fork-only experiment: the sensor keeps a config it finds already
-      # installed. This one sends only the profile to the Garnet API instead
-      # of every event, on two of the four legs, to compare shutdown.
-      - name: Pre-install sensor config (experiment legs)
-        if: matrix.test_group == 'registry' || matrix.test_group == 'unit'
-        run: sudo install -D -o root -m 644 .github/garnet-sensor-config.yaml /etc/jibril/config.yaml
+      # Fork-only experiment. The sensor keeps a config it finds already
+      # installed, so this arm runs it without the Garnet API output: events
+      # and the profile go to local files only.
+      - name: Pre-install sensor config without the API output
+        if: matrix.sensor_arm == 'no-upload'
+        run: |
+          sed '/- name: garnet-ai/,$d' .github/garnet-sensor-config.yaml > /tmp/sensor-config.yaml
+          tail -5 /tmp/sensor-config.yaml
+          sudo install -D -o root -m 644 /tmp/sensor-config.yaml /etc/jibril/config.yaml
+      - uses: ./.github/actions/sensor-diag
       - uses: garnet-org/action@673a06d87748bec49e4d8df22d371b2a3420aba4 # v2.5.2
         with:
           job_index: ${{ strategy.job-index }}
@@ -295,6 +302,19 @@ jobs:
             docker compose -f docker-compose.dev.yml logs temporal --tail=200
           fi
 
+      - name: Wait for the sensor queue to drain
+        if: always() && matrix.sensor_arm == 'drain-wait'
+        run: |
+          start=$(date +%s); last=-1; same=0
+          while [ $(( $(date +%s) - start )) -lt 1500 ]; do
+            size=$(sudo stat -c %s /var/log/jibril.out 2>/dev/null || echo 0)
+            if [ "$size" = "$last" ]; then same=$((same+1)); else same=0; fi
+            last=$size
+            if [ $same -ge 4 ]; then break; fi
+            sleep 10
+          done
+          echo "audit file stable at $last bytes after $(( $(date +%s) - start ))s"
+
       - name: Sensor event volume before shutdown
         if: always()
         run: |
@@ -302,9 +322,12 @@ jobs:
           echo "--- audit lines"
           sudo wc -l /var/log/jibril.out || true
           echo "--- events by kind"
-          sudo grep -o '"kind":"[a-z_]*"' /var/log/jibril.out | sort | uniq -c | sort -rn | head -20 || true
+          sudo grep -o '"kind":"[a-z_]*"' /var/log/jibril.out | sort | uniq -c | sort -rn | head -8 || true
+          echo "--- largest and median audit line (bytes)"
+          sudo awk '{print length($0)}' /var/log/jibril.out | sort -n | awk '{a[NR]=$1} END {print "max", a[NR], "median", a[int((NR+1)/2)], "lines", NR}' || true
           echo "--- dispatcher backlog warnings"
-          sudo grep -c 'enqueued jobs' /var/log/jibril.log || true
-          sudo grep -o '[0-9]* enqueued jobs' /var/log/jibril.log | tail -5 || true
-          echo "--- garnet output in config"
-          sudo grep -A3 'name: garnet-ai' /etc/jibril/config.yaml || true
+          sudo grep -a -o '[0-9]* enqueued jobs' /var/log/jibril.log | tail -5 || true
+          echo "--- failed event uploads so far"
+          sudo grep -a -c 'failed to ingest v2 event' /var/log/jibril.log || true
+          echo "--- outputs in config"
+          sudo grep -E '^    - name:|type: garnet' /etc/jibril/config.yaml || true
