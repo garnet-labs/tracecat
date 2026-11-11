@@ -34,40 +34,11 @@ env:
   UV_SYSTEM_PYTHON: 1
 
 jobs:
-  test-custom-registry-install:
-    runs-on: blacksmith-8vcpu-ubuntu-2204
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: "0.13.4"
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
-
-      - name: Set up Python 3.12
-        uses: useblacksmith/setup-python@943b05a7c4ca70c2360391137527a37bee33fb1d # v6
-        with:
-          python-version: "3.12"
-
-      - name: Clone custom registry starter
-        run: git clone https://github.com/TracecatHQ/custom-integrations-starter-kit
-
-      - name: Install dependencies
-        working-directory: custom-integrations-starter-kit
-        run: |
-          uv venv
-          env -u UV_SYSTEM_PYTHON uv pip install --python .venv/bin/python .
-          .venv/bin/python -c "import custom_actions"
-
   test-all:
-    runs-on: blacksmith-8vcpu-ubuntu-2204
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 60
     strategy:
       matrix:
@@ -81,6 +52,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+      - uses: garnet-org/action@673a06d87748bec49e4d8df22d371b2a3420aba4 # v2.5.2
+        with:
+          job_index: ${{ strategy.job-index }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
