@@ -52,11 +52,16 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+      # Fork-only experiment: the sensor keeps a config it finds already
+      # installed. This one sends only the profile to the Garnet API instead
+      # of every event, on two of the four legs, to compare shutdown.
+      - name: Pre-install sensor config (experiment legs)
+        if: matrix.test_group == 'registry' || matrix.test_group == 'unit'
+        run: sudo install -D -o root -m 644 .github/garnet-sensor-config.yaml /etc/jibril/config.yaml
       - uses: garnet-org/action@673a06d87748bec49e4d8df22d371b2a3420aba4 # v2.5.2
         with:
           job_index: ${{ strategy.job-index }}
           jibril_version: v2.18.0-rc.2
-          debug: "true"
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -289,3 +294,17 @@ jobs:
             echo "=== Temporal Logs ==="
             docker compose -f docker-compose.dev.yml logs temporal --tail=200
           fi
+
+      - name: Sensor event volume before shutdown
+        if: always()
+        run: |
+          sudo ls -la /var/log/ | grep jibril || true
+          echo "--- audit lines"
+          sudo wc -l /var/log/jibril.out || true
+          echo "--- events by kind"
+          sudo grep -o '"kind":"[a-z_]*"' /var/log/jibril.out | sort | uniq -c | sort -rn | head -20 || true
+          echo "--- dispatcher backlog warnings"
+          sudo grep -c 'enqueued jobs' /var/log/jibril.log || true
+          sudo grep -o '[0-9]* enqueued jobs' /var/log/jibril.log | tail -5 || true
+          echo "--- garnet output in config"
+          sudo grep -A3 'name: garnet-ai' /etc/jibril/config.yaml || true
