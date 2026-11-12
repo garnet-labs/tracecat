@@ -41,6 +41,9 @@ jobs:
       id-token: write
     timeout-minutes: 60
     strategy:
+      # Fork-only. unit-sandbox fails on GitHub-hosted runners, and the
+      # default fail-fast cancels the other suites before they finish.
+      fail-fast: false
       matrix:
         test_group:
           - unit
