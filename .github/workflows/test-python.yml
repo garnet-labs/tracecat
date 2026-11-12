@@ -56,15 +56,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/sensor-diag
-      # Fork-only. The action hands the profile to the Garnet App as a
-      # workflow artifact, so the sensor uploads no events of its own. With
-      # per-event upload on, the sensor on this job wrote no profile.
+      # Fork-only. Default upload path again, to test v2.18.0-rc.3 against
+      # the profile loss seen on this job with rc.2.
       - uses: garnet-org/action@673a06d87748bec49e4d8df22d371b2a3420aba4 # v2.5.2
-        env:
-          GARNET_ACTION_FORCE_RUN_ARTIFACT: "true"
         with:
           job_index: ${{ strategy.job-index }}
-          jibril_version: v2.18.0-rc.2
+          jibril_version: v2.18.0-rc.3
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
