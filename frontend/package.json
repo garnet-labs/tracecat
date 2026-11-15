@@ -144,7 +144,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.0.4",
     "@biomejs/cli-darwin-arm64": "2.2.4",
-    "@hey-api/openapi-ts": "0.48.3",
+    "@hey-api/openapi-ts": "0.97.3",
     "@hookform/devtools": "4.4.0",
     "@playwright/test": "1.58.2",
     "@shadcn/helpers": "0.2.0",
