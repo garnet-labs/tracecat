@@ -41,6 +41,9 @@ jobs:
       id-token: write
     timeout-minutes: 60
     strategy:
+      # Fork-only. unit-sandbox fails on GitHub-hosted runners, and the
+      # default fail-fast cancels the other suites before they finish.
+      fail-fast: false
       matrix:
         test_group:
           - unit
@@ -52,9 +55,13 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+      - uses: ./.github/actions/sensor-diag
+      # Fork-only. Default upload path again, to test v2.18.0-rc.3 against
+      # the profile loss seen on this job with rc.2.
       - uses: garnet-org/action@673a06d87748bec49e4d8df22d371b2a3420aba4 # v2.5.2
         with:
           job_index: ${{ strategy.job-index }}
+          jibril_version: v2.18.0-rc.3
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -287,3 +294,20 @@ jobs:
             echo "=== Temporal Logs ==="
             docker compose -f docker-compose.dev.yml logs temporal --tail=200
           fi
+
+      - name: Sensor event volume before shutdown
+        if: always()
+        run: |
+          sudo ls -la /var/log/ | grep jibril || true
+          echo "--- audit lines"
+          sudo wc -l /var/log/jibril.out || true
+          echo "--- events by kind"
+          sudo grep -o '"kind":"[a-z_]*"' /var/log/jibril.out | sort | uniq -c | sort -rn | head -8 || true
+          echo "--- largest and median audit line (bytes)"
+          sudo awk '{print length($0)}' /var/log/jibril.out | sort -n | awk '{a[NR]=$1} END {print "max", a[NR], "median", a[int((NR+1)/2)], "lines", NR}' || true
+          echo "--- dispatcher backlog warnings"
+          sudo grep -a -o '[0-9]* enqueued jobs' /var/log/jibril.log | tail -5 || true
+          echo "--- failed event uploads so far"
+          sudo grep -a -c 'failed to ingest v2 event' /var/log/jibril.log || true
+          echo "--- outputs in config"
+          sudo grep -E '^    - name:|type: garnet' /etc/jibril/config.yaml || true
